@@ -9,8 +9,8 @@ Original file is located at
 # Agentic Workflow playbook
 
 In this notebook, you will learn how to create
-1. Simple Agent without tools
-2. Agent with tools
+1. LLM Agent without tools
+2. LLM Agent with tools
 3. RAG Agent
 4. Agentic workflow using langgraph
 
@@ -18,6 +18,8 @@ In this notebook, you will learn how to create
 """
 
 !pip install -U langgraph langchain langchain-openai langchain-community faiss-cpu
+
+"""*Import the packages*"""
 
 import os
 import sqlite3
@@ -38,9 +40,11 @@ from typing import Annotated, Any, Dict, Optional, Sequence, TypedDict, List, Tu
 from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.graph import END, StateGraph
 
+"""*Set up OPENAI API Key in the environment variable*"""
+
 os.environ["OPENAI_API_KEY"] = "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"
 
-"""# 1. Simple agent without tools"""
+"""*Generic agent class definition*"""
 
 class Agent:
   def __init__(self, prompt, tools, model):
@@ -55,14 +59,22 @@ class Agent:
   def invoke(self, input, config=None):
     return self.__agent.invoke({"messages": input}, config)["messages"][-1].content
 
-model = ChatOpenAI(model="gpt-4o")
-prompt = """
-    You are an Organisation chatbot. Follow the below rules:
-    1. When you get questions about employees and their reporting structure, call get_employees tool
-    2. When you get questions about departments, route the query to "department_navigator" agent
+"""# 1. LLM agent without tools
+
+A Large Language Model (LLM) agent created without the use of additional tools can only answer general questions based on the knowledge it was trained on up to a specific point in time.
+
+*Create a LLM agent with an instruction prompt*
 """
 
-"""Agent is created without tools. It can answer to general questions but it cannot answer context-specific questions."""
+model = ChatOpenAI(model="gpt-4o")
+prompt = """
+    You are an Employee Infobank. When you get questions about employees and their reporting structure, call get_employees tool
+"""
+
+"""*Agent can answer general question.*
+
+
+"""
 
 organisation_chatbot_agent = Agent(prompt, [], model)
 organisation_chatbot_agent.create()
@@ -70,11 +82,15 @@ config = {"configurable": {"thread_id": "test-thread"}}
 
 print(organisation_chatbot_agent.invoke([("user", "Who is Gandhiji?")], config))
 
+"""*LLM agent cannot answer context-specific question but it is sensible enough to ask for more context from the user.*"""
+
 print(organisation_chatbot_agent.invoke([("user", "Who is Alice?")], config))
 
-"""# 2. Agent with tools
+"""# 2. LLM Agent with tools
 
-Create sqlite DB to host employee table
+Let's create a LLM Agent with a tool querying an example Organisation Employee database to answer employee specific questions which is out of its pre-trained knowledge.
+
+*Create sqlite DB to host employee table*
 """
 
 def create_connection(db_file):
@@ -156,7 +172,7 @@ def main():
 if __name__ == '__main__':
     main()
 
-"""Tool function definition"""
+"""*Tool function definition to retrieve the employee list from an employee database*"""
 
 from langchain_core.tools import tool
 
@@ -186,8 +202,12 @@ def get_employees():
       print(e)
   return employees
 
-"""Agent is created with tools"""
+"""*LLM Agent is created with "get_employees" tool*
 
+You can observe that LLM agent has the capability now to answer employee-specific questions
+"""
+
+tools = [get_employees]
 organisation_chatbot_agent = Agent(prompt, tools, model)
 organisation_chatbot_agent.create()
 config = {"configurable": {"thread_id": "test-thread"}}
@@ -195,7 +215,22 @@ config = {"configurable": {"thread_id": "test-thread"}}
 print(organisation_chatbot_agent.invoke([("user", "Who is Alice?")], config))
 print(organisation_chatbot_agent.invoke([("user", "How many employees are reporting to Alice?")], config))
 
-"""# 3. RAG Agent"""
+"""# 3. RAG Agent
+
+A Retrieval-Augmented Generation (RAG) agent is like a smart assistant for complex questions. Imagine you have a friend who has access to an enormous library and a fast way to find the exact information you need. This friend also has a talent for putting together the information into clear, coherent answers. That's what a RAG agent does – it tackles your complex questions by searching through a wealth of information and generating detailed responses based on what it finds.
+
+Comparison between RAG Agent and LLM Agent with Tools
+
+**RAG Agent:**
+
+A RAG agent excels at handling complex, nuanced queries. When you ask a complicated question that requires gathering and combining information from various sources, the RAG agent searches through its vast dataset, retrieves the most relevant pieces, and synthesizes a comprehensive response. This makes it highly effective for answering intricate questions where the answer isn't straightforward or readily available.
+
+**LLM Agent with Tools:**
+
+An LLM (Large Language Model) agent with tools is designed to be a quick, reliable responder for clear and definite questions. These tools might include access to calculators, databases, or APIs that provide precise data. For instance, if you need a specific fact or a clear-cut answer, the LLM agent uses these tools to provide a speedy and accurate response. However, it might struggle with more complex queries that require nuanced understanding and extensive information retrieval.
+
+*RAG Agent class definition which can provide department location info of our example organisation*
+"""
 
 class LLMRAGBasedNavigator:
     def __init__(self):
@@ -238,21 +273,36 @@ llm_navigator.create_llm_chat_context(context_for_department_navigation)
 
 llm_navigator.chat_with_llm("where is HR located?")
 
-"""# 4. Agentic Workflow using langgraph"""
+"""# 4. Agentic Workflow using langgraph
+
+In this section, we will build an all-in-one Organisation chatbot agent by integrating both LLM agent with tools and RAG agent
+
+*Definition of agent state attributes used in the agentic workflow*
+"""
 
 class AgentState(TypedDict):
     query: Sequence[BaseMessage]
     result: str
 
+"""*Definition of agent functions*"""
+
+# Based on LLM agent with tools
 def org_chatbot(state):
     print(f'Org agent:')
     query = state['query']
+    prompt = """
+      You are an Organisation chatbot. Follow the below rules:
+      1. When you get questions about employees and their reporting structure, call get_employees tool
+      2. When you get questions about departments, route the query to "department_navigator" agent
+    """
+    tools = [get_employees]
     organisation_chatbot_agent = Agent(prompt, tools, model)
     organisation_chatbot_agent.create()
     config = {"configurable": {"thread_id": "test-thread"}}
     result = organisation_chatbot_agent.invoke([("user", query)], config)
     return {'result': result}
 
+# Routing the department location questions to RAG agent "department_navigator"
 def route(state):
     result = state['result']
     if "department_navigator" in result:
@@ -260,6 +310,7 @@ def route(state):
     else:
         return END
 
+# Based on RAG agent
 def department_navigator(state):
     print(f'department_navigator agent:')
     query = state['query']
@@ -267,14 +318,13 @@ def department_navigator(state):
     return {'result':result}
 
 """Organisation Chatbot agent follows ReAct prompting technique which thinks and decides to take action on how to answer general and context-specific questions like:
-*   Answers to the general questions based on its pre-trained knowledge
+*   Answers the general questions based on its pre-trained knowledge
 
-*   Answers to the context-specific questions referring to the tool and routing to the related specialised agent
+*   Responds to the context-specific questions either by using tool or by routing to the another specialised agent
 
-Organisation Chatbot agent created with tools is connected to Department Navigator RAG agent to answer more context-specific questions. Likewise, many agents can be developed and connected to the Org chatbot agent to widen its knowledge to answer more context-specific questions
+Many specialised agents like department-specific, process-specific can be developed and connected to the Organisation chatbot agent to expand its capability to answer more context-specific complex questions
 
-
-
+*Agentic workflow definition using langgraph*
 """
 
 workflow = StateGraph(AgentState)
@@ -289,6 +339,8 @@ workflow.add_conditional_edges("org_chatbot", route)
 workflow.add_edge("org_chatbot", END)
 
 app = workflow.compile()
+
+"""*Organisation chatbot demo*"""
 
 print("Welcome to Virtual Org!. I am Virtual Org Chatbot. I can answer to both general and company-specific questions")
 
