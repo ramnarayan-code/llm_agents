@@ -42,7 +42,7 @@ from langgraph.graph import END, StateGraph
 
 """*Set up OPENAI API Key in the environment variable*"""
 
-os.environ["OPENAI_API_KEY"] = "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"
+os.environ["OPENAI_API_KEY"] = ""
 
 """*Generic agent class definition*"""
 
@@ -82,7 +82,7 @@ config = {"configurable": {"thread_id": "test-thread"}}
 
 print(organisation_chatbot_agent.invoke([("user", "Who is Gandhiji?")], config))
 
-"""*LLM agent cannot answer context-specific question but it is sensible enough to ask for more context from the user.*"""
+"""*Despite configured with a Role-specific instruction prompt, LLM agent cannot answer context-specific question but it is sensible enough to ask for more context from the user.*"""
 
 print(organisation_chatbot_agent.invoke([("user", "Who is Alice?")], config))
 
@@ -179,7 +179,7 @@ from langchain_core.tools import tool
 @tool
 def get_employees():
   """Gets the employees list."""
-  conn = create_connection("test.db")
+  conn = create_connection("org.db")
   employees = {}
   try:
       cur = conn.cursor()
